@@ -2,7 +2,7 @@
 // Remote Temp. monitor
 // -----------------------------------
 #include "RGBMood.h"
-// PIN DEFINITIONS
+// Pins
 #define analogSensorRight A2
 #define analogMicAmp A3
 #define boardLED 7
@@ -12,29 +12,31 @@
 #define rgbTwoRED A0
 #define rgbTwoGREEN A1
 #define rgbTwoBLUE A4
-#define ledCount 2
-// Definitions related to TMP 36
+// Temp Sensor
 #define analogVoltage 3.32
 #define tweakFinalOutputTemp -2.0
-// RGB LED Definitions
+// RGB LED
 #define bedTimeFadingSpeed 50
 #define partyModeFadingSpeed 1
-
-
+#define ledCount 2  // Note: Update this should another set of LEDs be added.
+// Microphone
+#define minNoiseFloor 1450
+#define scanTimeForNoiseFloorInMilli 3000
+#define maxTimeAllowedForPartyModeInMillis 900000  // 15 Mins
 
 // GlobalVars
-signed short checkTemp = 0;
 double rightTemp = 0.0;
 double leftTemp = 0.0;
-double averageTemp = 0.0;
-bool isInPartyMode = true;
+bool isInPartyMode = false;
+/*signed int maxTimeAllowedForPartyMode = maxTimeAllowedForPartyModeInMillis*/
+signed int maxTimeAllowedForPartyMode = 60000;
+int partyModeStartTime = 0;
 
 // Microphone
-signed int currentNoiseFloor = 1550;
-int audioVoltage = 0;
-signed int currentAudioLevel = 0;
-/*const int sampleWindow = 50; // Sample window width in mS (50 mS = 20Hz)
-unsigned int sample;*/
+int currentNoiseFloor = 1560;
+signed short audioVoltage = 0;
+signed short currentAudioLevel = 0;
+
 RGBMood snoozeLights[2] = {
   RGBMood(rgbOneRED, rgbOneGREEN, rgbOneBLUE),
   RGBMood(rgbTwoRED, rgbTwoGREEN, rgbTwoBLUE)
@@ -74,7 +76,7 @@ void setup() {
    setInitialBoardState();
    // Define particle.io exposed endpoints.
    Spark.variable("tempRight", rightTemp);
-   Spark.variable("avgTemp", averageTemp);
+   Spark.variable("noiseFloor", currentNoiseFloor);
    Spark.function("dim", dimLights);
    Spark.function("brighten", brightenLights);
    Spark.function("partyMode", setPartyMode);
@@ -82,27 +84,20 @@ void setup() {
 }
 void loop() {
     rightTemp = convertVoltageToFarenheit(analogRead(analogSensorRight)) + tweakFinalOutputTemp;
-    for (int i = 0; i < ledCount; i++) {
+    // RGB Per-Loop Ticks and logic
+    for (short i = 0; i < ledCount; i++) {
       if (isInPartyMode == true) {
         processMicInput();
         snoozeLights[i].setHSB(random(0, 255), random(0, 255), currentAudioLevel);
+        if (millis() - partyModeStartTime > maxTimeAllowedForPartyMode) {
+          setPartyMode("OFF");
+        }
       }
       snoozeLights[i].tick();
     }
     if (currentAudioLevel > 0) {
       currentAudioLevel -= 1.0;
     }
-}
-
-void processMicInput() {
-  int micInput = analogRead(analogMicAmp);
-  /*Serial.print("Microphone Input: ");
-  Serial.print(micInput);
-  Serial.print("  Current Audio Level: ");
-  Serial.println(currentAudioLevel);*/
-  if (micInput > currentNoiseFloor) {
-    currentAudioLevel = (micInput - currentNoiseFloor);
-  }
 }
 
 double convertVoltageToFarenheit(int readValue) {
@@ -113,29 +108,51 @@ double convertVoltageToFarenheit(int readValue) {
     float tempF = (tempC * 9.0 / 5.0) + 32.0;
     return tempF;
 }
+/* ------------- MICROPHONE ---------- */
+void processMicInput() {
+  short micInput = analogRead(analogMicAmp);
+  if (micInput > currentNoiseFloor) {
+    currentAudioLevel = (micInput - currentNoiseFloor);
+  }
+}
 
-/*double captureSomeSound() {
-   unsigned long startMillis= millis();  // Start of sample window
-   unsigned int peakToPeak = 0;   // peak-to-peak level
-   unsigned int signalMax = 0;
-   unsigned int signalMin = 1024;
-   // collect data for 50 mS
-   while (millis() - startMillis < sampleWindow) {
-      sample = analogRead(analogMicAmp);
-      if (sample < 1024) { // toss out spurious readings
-         if (sample > signalMax) {
-            signalMax = sample;  // save just the max levels
-         }
-         else if (sample < signalMin) {
-            signalMin = sample;  // save just the min levels
-         }
-      }
-   }
-   peakToPeak = signalMax - signalMin;  // max - min = peak-peak amplitude
-   double volts = (peakToPeak * 3.3) / 1024.0;  // convert to volts
-   return volts;
-}*/
+// Blocking - Measure the current room noise level.
+int acquireNoiseFloor() {
+  // Dim all LEDS
+  setLEDBrightness(5);
+  // Take a second or so to acquire the current room audio level.
+  float startingMillis = millis();
+  while (millis() - startingMillis < scanTimeForNoiseFloorInMilli) {
+    short micInput = analogRead(analogMicAmp);
+    // Throw away anything that's not at least over 1450
+    // The microphones idle state is 1450
+    if (micInput > minNoiseFloor &&
+        micInput > currentNoiseFloor ||
+        // It's possible a large reading could have thrown off the measurement,
+        // if the floor is less than the current floor by a high number then allow resetting.
+        micInput < (currentNoiseFloor - 500)) {
+        currentNoiseFloor = micInput;
+    }
+    delay(5);
+  }
+  for (int i = 0; i < ledCount; i++) {
+    snoozeLights[i].fadeHSB(0, 255, 255); // Rainbow mode only changes hue so set saturation and brightness
+  }
+}
 
+/* ------ LED ------ */
+void setLEDBrightness(int brightness) {
+  for (int i = 0; i < ledCount; i++) {
+      analogWrite(rgbOneRED, brightness);
+      analogWrite(rgbOneGREEN, brightness);
+      analogWrite(rgbOneBLUE, brightness);
+      analogWrite(rgbTwoRED, brightness);
+      analogWrite(rgbTwoGREEN, brightness);
+      analogWrite(rgbTwoBLUE, brightness);
+  }
+}
+
+/* ------ Exposed API Functions ------- */
 int dimLights(String command) {
   for (int i = 0; i < ledCount; i++) {
     snoozeLights[i].fadeHSB(0, 255, 25);
@@ -158,6 +175,9 @@ int setPartyMode(String command) {
     for (int i = 0; i < ledCount; i++) {
       snoozeLights[i].fadeHSB(0, 255, 255); // Rainbow mode only changes hue so set saturation and brightness
     }
+  } else {
+    partyModeStartTime = millis();
+    acquireNoiseFloor();
   }
   return 1;
 }
@@ -165,10 +185,10 @@ int setPartyMode(String command) {
 int sleepSystem(String command) {
   // Put the system to sleep for a given amount of time.
   // Cast string to int.
-  long convertedInt = strtol(SLEEP_MODE_DEEP, command);
-  if (convertedInt > 0) {
+  /*long convertedInt = strtol(SLEEP_MODE_DEEP, command);*/
+  /*if (convertedInt > 0) {
     System.sleep(convertedInt);
     return 1;
-  }
+  }*/
   return 0;
 }
