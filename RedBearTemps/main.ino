@@ -1,5 +1,5 @@
 // -----------------------------------
-// Remote Temp. monitor
+// -      Remote Temp. monitor       -
 // -----------------------------------
 #include "RGBMood.h"
 // Pins
@@ -16,8 +16,8 @@
 #define analogVoltage 3.32
 #define tweakFinalOutputTemp -2.0
 // RGB LED
+#define bedTimeLightDim 84
 #define bedTimeFadingSpeed 50
-#define partyModeFadingSpeed 1
 #define ledCount 2  // Note: Update this should another set of LEDs be added.
 // Microphone
 #define minNoiseFloor 1450
@@ -27,9 +27,9 @@
 // GlobalVars
 double rightTemp = 0.0;
 double leftTemp = 0.0;
+signed int RGBBrightness = 255;
 bool isInPartyMode = false;
-/*signed int maxTimeAllowedForPartyMode = maxTimeAllowedForPartyModeInMillis*/
-signed int maxTimeAllowedForPartyMode = 60000;
+signed int maxTimeAllowedForPartyMode = maxTimeAllowedForPartyModeInMillis;
 int partyModeStartTime = 0;
 
 // Microphone
@@ -61,26 +61,22 @@ void setInitialBoardState() {
   analogWrite(rgbTwoGREEN, 0);
   analogWrite(rgbTwoBLUE, 0);
   // Start Rainbow Mode
-  for (int i = 0; i < ledCount; i++) {
-    snoozeLights[i].setMode(RGBMood::RAINBOW_HUE_MODE);
-    snoozeLights[i].setFadingSteps(200);
-    snoozeLights[i].setFadingSpeed(25);  // 25 ms * 200 steps = 5 seconds
-    snoozeLights[i].setHoldingTime(0);
-    snoozeLights[i].fadeHSB(0, 255, 255); // Rainbow mode only changes hue so set saturation and brightness
-  }
-
+  setRainbowMode();
 }
 
 void setup() {
-   Serial.begin(9600);
    setInitialBoardState();
    // Define particle.io exposed endpoints.
-   Spark.variable("tempRight", rightTemp);
-   Spark.variable("noiseFloor", currentNoiseFloor);
-   Spark.function("dim", dimLights);
-   Spark.function("brighten", brightenLights);
-   Spark.function("partyMode", setPartyMode);
-   Spark.function("sleepy", sleepSystem);
+
+   // API Exposed Variables
+   Particle.variable("tempRight", rightTemp);
+   Particle.variable("noiseFloor", currentNoiseFloor);
+   // API Functions
+   Particle.function("dim", dimLights);
+   Particle.function("brighten", brightenLights);
+   Particle.function("partyMode", setPartyMode);
+   Particle.function("lightLevel", setBrightness);
+   Particle.function("fixedColor", setColorInHSB);
 }
 void loop() {
     rightTemp = convertVoltageToFarenheit(analogRead(analogSensorRight)) + tweakFinalOutputTemp;
@@ -119,7 +115,7 @@ void processMicInput() {
 // Blocking - Measure the current room noise level.
 int acquireNoiseFloor() {
   // Dim all LEDS
-  setLEDBrightness(5);
+  forceLEDColorBrightness(2);
   // Take a second or so to acquire the current room audio level.
   float startingMillis = millis();
   while (millis() - startingMillis < scanTimeForNoiseFloorInMilli) {
@@ -130,18 +126,23 @@ int acquireNoiseFloor() {
         micInput > currentNoiseFloor ||
         // It's possible a large reading could have thrown off the measurement,
         // if the floor is less than the current floor by a high number then allow resetting.
-        micInput < (currentNoiseFloor - 500)) {
+        micInput < (currentNoiseFloor - 300)) {
         currentNoiseFloor = micInput;
     }
     delay(5);
   }
   for (int i = 0; i < ledCount; i++) {
-    snoozeLights[i].fadeHSB(0, 255, 255); // Rainbow mode only changes hue so set saturation and brightness
+    snoozeLights[i].fadeHSB(0, 255, RGBBrightness); // Rainbow mode only changes hue so set saturation and brightness
   }
 }
 
 /* ------ LED ------ */
-void setLEDBrightness(int brightness) {
+/*
+  This method doesn't use RGBMoods library - this forcefully sets
+  the LED pins using analogWrite immediately.  Should be used only
+  for immediately dimming the leds or setting them all to max white.
+*/
+void forceLEDColorBrightness(int brightness) {
   for (int i = 0; i < ledCount; i++) {
       analogWrite(rgbOneRED, brightness);
       analogWrite(rgbOneGREEN, brightness);
@@ -152,10 +153,36 @@ void setLEDBrightness(int brightness) {
   }
 }
 
+// Set RGBMood brightness
+void setRGBBrightness(int level) {
+  RGBBrightness = level;
+  for (int i = 0; i < ledCount; i++) {
+    snoozeLights[i].fadeHSB(0, 255, RGBBrightness);
+  }
+}
+
+// Set a fixed color on all LEDS
+void setLEDFixedColor(int hue, int saturation, int brightness) {
+  for (int i = 0; i < ledCount; i++) {
+    snoozeLights[i].setMode(RGBMood::FIX_MODE);
+    snoozeLights[i].setHSB(hue, saturation, brightness);
+  }
+}
+
+void setRainbowMode() {
+  for (int i = 0; i < ledCount; i++) {
+    snoozeLights[i].setMode(RGBMood::RAINBOW_HUE_MODE);
+    snoozeLights[i].setFadingSteps(200);
+    snoozeLights[i].setFadingSpeed(bedTimeFadingSpeed);  // 25 ms * 200 steps = 5 seconds
+    snoozeLights[i].setHoldingTime(3);
+    snoozeLights[i].fadeHSB(0, 255, 255); // Rainbow mode only changes hue so set saturation and brightness
+  }
+}
+
 /* ------ Exposed API Functions ------- */
 int dimLights(String command) {
   for (int i = 0; i < ledCount; i++) {
-    snoozeLights[i].fadeHSB(0, 255, 25);
+    snoozeLights[i].fadeHSB(0, 255, bedTimeLightDim);
   }
   return 1;
 }
@@ -167,14 +194,67 @@ int brightenLights(String command) {
   return 1;
 }
 
+int setColorInHSB(String command) {
+  /*
+   * Take a comma deliminated HSB value and set RGB pins to it.
+   * Usage - "args=245,245,234"
+   */
+    // Create a new char array that's the size of all commands + 1
+    char * params = new char[command.length() + 1];
+    strcpy(params, command.c_str());  // Make the command string mutable by copy
+
+    // Kind of an odd syntax here but the first call pops the left most token
+    // Before the delimiter and stores a pointer to it in hue, 2nd pops the
+    // Next and stores in saturation and so on.
+    char * hue = strtok(params, ",");
+    char * saturation = strtok(NULL, ",");
+    char * brightness = strtok(NULL, ",");
+
+    if(hue != NULL && saturation != NULL && brightness != NULL) {
+      int h = atoi(hue);
+      int s = atoi(saturation);
+      int b = atoi(brightness);
+      setLEDFixedColor(h, s, b);
+      return 1;
+    }
+    return -1;
+}
+
+int setBrightness(String command) {
+  // Take the first character of the command string array
+  char lightCommand = command[0];
+  switch (lightCommand) {
+    case '0':
+      setRGBBrightness(0);
+      return 1;
+    case '1':
+      setRGBBrightness(43);
+      return 1;
+    case '2':
+      setRGBBrightness(43*2);
+      return 1;
+    case '3':
+      setRGBBrightness(43*3);
+      return 1;
+    case '4':
+      setRGBBrightness(43*4);
+      return 1;
+    case '5':
+      setRGBBrightness(43*5);
+      return 1;
+    case '6':
+      setRGBBrightness(255);
+      return 1;
+  }
+  return 0;
+}
+
 // Set party mode - this will enable the mic and the LED will move
 // In sync with the noise the kids make.
 int setPartyMode(String command) {
   isInPartyMode = !isInPartyMode;
   if (isInPartyMode == false) {
-    for (int i = 0; i < ledCount; i++) {
-      snoozeLights[i].fadeHSB(0, 255, 255); // Rainbow mode only changes hue so set saturation and brightness
-    }
+    setRainbowMode();
   } else {
     partyModeStartTime = millis();
     acquireNoiseFloor();
@@ -192,3 +272,8 @@ int sleepSystem(String command) {
   }*/
   return 0;
 }
+
+// TODO: Remove dim and brighten and replace with light level control
+// TODO: Allow for specificing fixed color via color wheel
+// TODO: Allow 'Rainbow mode to be set via API'
+// TODO: Possibly allow timer 'time' to be set
