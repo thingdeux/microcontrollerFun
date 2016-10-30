@@ -71,12 +71,14 @@ void setup() {
    // API Exposed Variables
    Particle.variable("tempRight", rightTemp);
    Particle.variable("noiseFloor", currentNoiseFloor);
+   Particle.variable("brightness", RGBBrightness);
    // API Functions
    Particle.function("dim", dimLights);
    Particle.function("brighten", brightenLights);
    Particle.function("partyMode", setPartyMode);
    Particle.function("lightLevel", setBrightness);
    Particle.function("fixedColor", setColorInHSB);
+   Particle.function("rainbowMode", enableRainbowMode);
 }
 void loop() {
     rightTemp = convertVoltageToFarenheit(analogRead(analogSensorRight)) + tweakFinalOutputTemp;
@@ -231,16 +233,16 @@ int setBrightness(String command) {
       setRGBBrightness(43);
       return 1;
     case '2':
-      setRGBBrightness(43*2);
+      setRGBBrightness(86);
       return 1;
     case '3':
-      setRGBBrightness(43*3);
+      setRGBBrightness(129);
       return 1;
     case '4':
-      setRGBBrightness(43*4);
+      setRGBBrightness(172);
       return 1;
     case '5':
-      setRGBBrightness(43*5);
+      setRGBBrightness(215);
       return 1;
     case '6':
       setRGBBrightness(255);
@@ -255,6 +257,7 @@ int setPartyMode(String command) {
   isInPartyMode = !isInPartyMode;
   if (isInPartyMode == false) {
     setRainbowMode();
+    setRGBBrightness(129);
   } else {
     partyModeStartTime = millis();
     acquireNoiseFloor();
@@ -262,18 +265,12 @@ int setPartyMode(String command) {
   return 1;
 }
 
-int sleepSystem(String command) {
-  // Put the system to sleep for a given amount of time.
-  // Cast string to int.
-  /*long convertedInt = strtol(SLEEP_MODE_DEEP, command);*/
-  /*if (convertedInt > 0) {
-    System.sleep(convertedInt);
-    return 1;
-  }*/
-  return 0;
+int enableRainbowMode(String command) {
+  setRainbowMode();
+  setRGBBrightness(255);
+  return 1;
 }
 
 // TODO: Remove dim and brighten and replace with light level control
-// TODO: Allow for specificing fixed color via color wheel
 // TODO: Allow 'Rainbow mode to be set via API'
-// TODO: Possibly allow timer 'time' to be set
+// TODO: Add sleep with interrupt support.
