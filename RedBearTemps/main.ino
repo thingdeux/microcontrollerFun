@@ -120,6 +120,7 @@ int acquireNoiseFloor() {
   // Take a second or so to acquire the current room audio level.
   float startingMillis = millis();
   while (millis() - startingMillis < scanTimeForNoiseFloorInMilli) {
+    Particle.process();
     short micInput = analogRead(analogMicAmp);
     // Throw away anything that's not at least over 1450
     // The microphones idle state is 1450
