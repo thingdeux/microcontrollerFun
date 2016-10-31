@@ -70,11 +70,9 @@ void setup() {
 
    // API Exposed Variables
    Particle.variable("tempRight", rightTemp);
-   Particle.variable("noiseFloor", currentNoiseFloor);
+   /*Particle.variable("noiseFloor", currentNoiseFloor);*/
    Particle.variable("brightness", RGBBrightness);
    // API Functions
-   Particle.function("dim", dimLights);
-   Particle.function("brighten", brightenLights);
    Particle.function("partyMode", setPartyMode);
    Particle.function("lightLevel", setBrightness);
    Particle.function("fixedColor", setColorInHSB);
@@ -117,6 +115,7 @@ void processMicInput() {
 // Blocking - Measure the current room noise level.
 int acquireNoiseFloor() {
   // Dim all LEDS
+  currentNoiseFloor = minNoiseFloor;
   forceLEDColorBrightness(2);
   // Take a second or so to acquire the current room audio level.
   float startingMillis = millis();
@@ -182,25 +181,12 @@ void setRainbowMode() {
 }
 
 /* ------ Exposed API Functions ------- */
-int dimLights(String command) {
-  for (int i = 0; i < ledCount; i++) {
-    snoozeLights[i].fadeHSB(0, 255, bedTimeLightDim);
-  }
-  return 1;
-}
-
-int brightenLights(String command) {
-  for (int i = 0; i < ledCount; i++) {
-    snoozeLights[i].fadeHSB(0, 255, 255);
-  }
-  return 1;
-}
-
 int setColorInHSB(String command) {
   /*
    * Take a comma deliminated HSB value and set RGB pins to it.
    * Usage - "args=245,245,234"
    */
+    isInPartyMode = false;
     // Create a new char array that's the size of all commands + 1
     char * params = new char[command.length() + 1];
     strcpy(params, command.c_str());  // Make the command string mutable by copy
@@ -259,18 +245,16 @@ int setPartyMode(String command) {
     setRainbowMode();
     setRGBBrightness(129);
   } else {
-    partyModeStartTime = millis();
     acquireNoiseFloor();
+    partyModeStartTime = millis();
   }
   return 1;
 }
 
 int enableRainbowMode(String command) {
+  isInPartyMode = false;
   setRainbowMode();
   setRGBBrightness(255);
   return 1;
 }
-
-// TODO: Remove dim and brighten and replace with light level control
-// TODO: Allow 'Rainbow mode to be set via API'
 // TODO: Add sleep with interrupt support.
