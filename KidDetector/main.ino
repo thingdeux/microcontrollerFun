@@ -3,10 +3,10 @@
 #define photoTransistorPin A2
 #define onboardLED D7
 #define nightTimeThreshold 400
-#define delayBeforeSendingAnotherNotificationInMillis 4000
+#define delayBeforeSendingAnotherNotificationInMillis 8000
 #define delayBeforeResettingPIR 30000
-#define pirWarmupTimeInMillis 1200000 // Give the pir 2 minutes to warm up.
-signed int motionSensorState = LOW;
+#define pirWarmupTimeInMillis 120000 // Give the pir 2 minutes to warm up.
+signed int motionSensorState = HIGH;
 int lastPublishedMotionSeconds = 0;
 int lightLevel = 0;
 bool isMotionSensorEnabled = false;
@@ -16,6 +16,7 @@ int lastCheckedForNightTime = 0;
 int lastCheckedForDayTime = 0;
 bool isPIRWarmingUp = false;
 int pirWarmUpTime = 0;
+int movementDetected = 0;
 
 void setup() {
   pinMode(motionSensorPin, INPUT);
@@ -26,19 +27,29 @@ void setup() {
   // Turn the motion sensor on
   digitalWrite(transistorPin, motionSensorState);
   Particle.variable("light", lightLevel);
+  Particle.variable("isSensorOn", isMotionSensorEnabled);
+  Particle.variable("isWarming", isPIRWarmingUp);
+  Particle.variable("sensorState", motionSensorState);
+  Particle.variable("movement", movementDetected);
+
+  isPIRWarmingUp = true;
+  pirWarmUpTime = millis();
 }
 
 void loop() {
-  lightLevel = analogRead(photoTransistorPin);
-  if (lightLevel <= nightTimeThreshold) {
+  digitalWrite(transistorPin, motionSensorState);
+  //lightLevel = analogRead(photoTransistorPin);
+  //digitalWrite(transistorPin, motionSensorState);
+  /*if (lightLevel <= nightTimeThreshold) {
     checkForNightTime();
   } else {
     checkForDaytime();
-  }
+  }*/
   if (motionSensorState == HIGH && isPIRWarmingUp == false) {
     checkForMotion();
   } else if (motionSensorState == HIGH && isPIRWarmingUp == true) {
-    if (millis() - pirWarmUpTime > delayBeforeResettingPIR) {
+    if (millis() - pirWarmUpTime > pirWarmupTimeInMillis) {
+      digitalWrite(onboardLED, motionSensorState);
       isPIRWarmingUp = false;
     }
   }
@@ -86,8 +97,9 @@ void checkForDaytime() {
 }
 
 void checkForMotion() {
-    int movementDetected = digitalRead(motionSensorPin);
-    if (movementDetected) {
+    movementDetected = digitalRead(motionSensorPin);
+    if (movementDetected == HIGH) {
+
         notifyMotionDetected();
     }
 }
@@ -96,6 +108,7 @@ void notifyMotionDetected() {
   int currentMillis = millis();
   if (currentMillis - lastPublishedMotionSeconds >
       delayBeforeSendingAnotherNotificationInMillis) {
+          /*Particle.publish("mdTest", String(currentMillis), PRIVATE);*/
           Particle.publish("MotionDetected", String(currentMillis), PRIVATE);
   }
   lastPublishedMotionSeconds = currentMillis;
