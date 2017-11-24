@@ -122,6 +122,7 @@ void processChristmasTreeLights() {
 signed short int currentNoteIndex = 0;
 signed short int currentNote = SILENCE;
 signed short int currentNoteDuration = Tempo;
+signed short int jingleBellArraySize = (sizeof(jingleBells) / sizeof(jingleBells[0]));
 
 void playJingleBells() {
   currentNoteIndex = 0;
@@ -139,7 +140,7 @@ void setCurrentNote() {
 void processNotes() {
   if (musicTimer >= currentNoteDuration) {
       currentNoteIndex += 1;
-      if (currentNoteIndex < sizeof(jingleBells)) {
+      if (currentNoteIndex < jingleBellArraySize) {
           setCurrentNote();
       } else {
         currentNoteIndex = 0;
