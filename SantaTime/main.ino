@@ -1,44 +1,49 @@
-#define relayPin D0
-#define sadFaceLED D1
-#define happyFaceLED D2
-#define mehFaceLED D3
-#define nightTimeThreshold 400
-#define CommandSuccessful 1
-#define CommandFailed 0
-#define flashDelayInMs = 2000;
+#include "pitches.h"
+#include "constants.h"
 
-signed int relayState = LOW;
-signed int globalTimer = 0;
+// Note: Cannot read state directly from the transistor - hence unknown.
+enum { UNKNOWN = 10, OFF, ON, LAUGH } relayState = OFF;
+signed int lightTimer = 0;
+signed int musicTimer = 0;
 bool shouldFlashLights = false;
+bool shouldPlayMusic = false;
 
 void setup() {
   pinMode(relayPin, OUTPUT);
-  pinMode(sadFaceLED, OUTPUT);
-  pinMode(happyFaceLED, OUTPUT);
-  pinMode(mehFaceLED, OUTPUT);
+  pinMode(rgbGreenPin, OUTPUT);
+  pinMode(rgbBluePin, OUTPUT);
+  pinMode(rgbRedPin, OUTPUT);
   // All Lights Start off
-  digitalWrite(sadFaceLED, LOW);
-  digitalWrite(mehFaceLED, LOW);
-  digitalWrite(happyFaceLED, LOW);
+  analogWrite(rgbRedPin, 0);
+  analogWrite(rgbBluePin, 0);
+  analogWrite(rgbGreenPin, 0);
   // Christmas Lights controlled through Relay should start off
   digitalWrite(relayPin, LOW);
+
   Particle.function("santasMood", setSantasMood);
   Particle.function("relayControl", setRelayMode);
-  Serial.begin(9600);
+  Particle.function("syncRelay", setRelayMode);
+
+  Serial.begin();
 }
 
 int setRelayMode(String command) {
   char relaySetting = command[0];
   switch (relaySetting) {
-    case '0':
+    case OFF:
         shouldFlashLights = false;
-        relayState = LOW;
-        digitalWrite(relayPin, LOW);
+        relayState = OFF;
+        setRelay(LOW);
         return CommandSuccessful;
-    case '1':
-        globalTimer = 0;
-        shouldFlashLights = true;
+    case ON:
+        lightTimer = 0;
+        shouldFlashLights = false;
+        setRelay(HIGH);
         return CommandSuccessful;
+    case LAUGH:
+      lightTimer = 0;
+      shouldFlashLights = true;
+      return CommandSuccessful;
   }
   return CommandFailed;
 }
@@ -49,39 +54,42 @@ int setSantasMood(String command) {
   switch (moodOption) {
     // Happy - Green
     case 'H':
-      digitalWrite(sadFaceLED, LOW);
-      digitalWrite(mehFaceLED, LOW);
-      digitalWrite(happyFaceLED, HIGH);
+      analogWrite(rgbBluePin, 0);
+      analogWrite(rgbRedPin, 0);
+      analogWrite(rgbGreenPin, 255);
+      if (!shouldPlayMusic) { playJingleBells(); }
       return CommandSuccessful;
-    // Sad - Red
+    // Sad - Blue
     case 'S':
-      digitalWrite(happyFaceLED, LOW);
-      digitalWrite(mehFaceLED, LOW);
-      digitalWrite(sadFaceLED, HIGH);
+      analogWrite(rgbRedPin, 0);
+      analogWrite(rgbGreenPin, 0);
+      analogWrite(rgbBluePin, 255);
       return CommandSuccessful;
-    // Meh - Yellow
+    // Neutral - Yellow
     case 'M':
-      digitalWrite(happyFaceLED, LOW);
-      digitalWrite(sadFaceLED, LOW);
-      digitalWrite(mehFaceLED, HIGH);
+      analogWrite(rgbRedPin, 252);
+      analogWrite(rgbGreenPin, 239);
+      analogWrite(rgbBluePin, 0);
       return CommandSuccessful;
     // None
     case 'N':
-      digitalWrite(happyFaceLED, LOW);
-      digitalWrite(sadFaceLED, LOW);
-      digitalWrite(mehFaceLED, LOW);
+      analogWrite(rgbRedPin, 0);
+      analogWrite(rgbGreenPin, 0);
+      analogWrite(rgbBluePin, 0);
       return CommandSuccessful;
   }
   return CommandFailed;
 }
 
 void setRelay(int value) {
-  relayState = value;
   digitalWrite(relayPin, value);
 }
 
+// Need to make sure that the animation doesn't block - hence, no delays
+// Process the animation on a timer and allow for transport communication
+// To continue controlling other elements.
 void processChristmasTreeLights() {
-  switch (globalTimer) {
+  switch (lightTimer) {
     case 1:
       setRelay(HIGH);
       break;
@@ -105,16 +113,52 @@ void processChristmasTreeLights() {
       break;
     case 14000:
       setRelay(LOW);
-      globalTimer = 0;
+      lightTimer = 0;
       shouldFlashLights = false;
       break;
   }
 }
 
+signed short int currentNoteIndex = 0;
+signed short int currentNote = SILENCE;
+signed short int currentNoteDuration = Tempo;
+
+void playJingleBells() {
+  currentNoteIndex = 0;
+  setCurrentNote();
+  shouldPlayMusic = true;
+}
+
+void setCurrentNote() {
+  signed short int pitch = jingleBells[currentNoteIndex];
+  currentNoteDuration = jingleBells[currentNoteIndex];
+  tone(piezoPIN, pitch, currentNoteDuration);
+}
+
+// TODO: Fix musical interlude
+void processNotes() {
+  if (musicTimer >= currentNoteDuration) {
+      currentNoteIndex += 1;
+      if (currentNoteIndex < sizeof(jingleBells)) {
+          setCurrentNote();
+      } else {
+        currentNoteIndex = 0;
+        shouldPlayMusic = false;
+        noTone(piezoPIN);
+      }
+      musicTimer = 0;
+  }
+}
+
 void loop() {
-  Serial.println(globalTimer);
   if (shouldFlashLights == true) {
-    globalTimer += 1;
+    lightTimer += 1;
     processChristmasTreeLights();
+  }
+
+  if (shouldPlayMusic) {
+    Serial.println(musicTimer);
+    musicTimer += 1;
+    processNotes();
   }
 }
