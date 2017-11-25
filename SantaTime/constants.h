@@ -6,8 +6,14 @@
 #define CommandSuccessful 1
 #define CommandFailed 0
 
+// Relay States - converted from ENUM to int due to api limitations
+#define UNKNOWN 5
+#define OFF 6
+#define ON 7
+#define LAUGH 8
+
 // Note: BPM to MS conversation = 60000 / MS
-#define Tempo 342
+#define Tempo 34
 
 
 
@@ -25,8 +31,8 @@ const signed short int DottedQuarterNote = 512;
 const signed short int WholeNote = 1364;
 const signed short int DottedHalfNote = 1023;
 const signed short int HalfNote = 682;
-const signed short int EigthOfANote = 171;
-const signed short int SixteenthOfANote = 171;
+const signed short int Eigth = 171;
+const signed short int SixteenthOfANote = 85;
 
 // Notes in the melody - the length here needs to match with the durations array
 // Below.  Not ideal but....cheap
@@ -40,7 +46,7 @@ const int jingleBells[] = {
 // note durations: 4 = quarter note, 8 = eighth note, etc.:
 const int noteDurations[] = {
       /*   E3        S        E3          S         E3           S          E3          S         E3          S       E3 */
-      WholeNote, Tempo,  WholeNote, Tempo,  WholeNote, Tempo + 2,  WholeNote, Tempo,  WholeNote, Tempo,  WholeNote,
+      Eigth, Tempo,  Eigth, Tempo,  DottedQuarterNote, int(Tempo / 10),  Eigth, Tempo,  Eigth, Tempo,  DottedQuarterNote,
       /* S        E3         S        G3         S        C3         S        D3         S        E3 */
-      Tempo,  WholeNote, Tempo, WholeNote, Tempo, WholeNote, Tempo, WholeNote, Tempo, WholeNote
+      int(Tempo / 10),  Eigth, int(Tempo * 0.25), Eigth, Tempo, Eigth, Tempo, Eigth, Tempo, WholeNote
 };
