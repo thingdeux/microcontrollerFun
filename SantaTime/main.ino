@@ -20,6 +20,10 @@ void setup() {
   // Christmas Lights controlled through Relay should start off
   digitalWrite(relayPin, LOW);
 
+  // Disable default RGB
+  RGB.control(true);
+  RGB.brightness(0);
+
   Particle.variable("rState", relayState);
   Particle.function("santasMood", setSantasMood);
   Particle.function("relayControl", setRelayMode);
@@ -40,13 +44,11 @@ int setRelayMode(String command) {
   int relaySetting = int(command.toInt());
   switch (relaySetting) {
     case OFF:
-        Serial.println("RELAY OFF");
         shouldFlashLights = false;
         relayState = OFF;
         setRelay(LOW);
         return CommandSuccessful;
     case ON:
-      Serial.println("RELAY ON");
         lightTimer = 0;
         shouldFlashLights = false;
         relayState = ON;
@@ -54,7 +56,6 @@ int setRelayMode(String command) {
         return CommandSuccessful;
     case LAUGH:
       if (relayState != LAUGH) {
-        Serial.println("RELAY LAUGH");
         lightTimer = 0;
         shouldFlashLights = true;
         relayState = LAUGH;
